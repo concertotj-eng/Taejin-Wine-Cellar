@@ -3239,6 +3239,9 @@ function openWineForm(id){
   document.getElementById('deleteBtn').classList.toggle('hidden', !id);
   document.getElementById('deleteBtn').textContent = '이 와인 삭제';
   document.getElementById('panelTitle').textContent = id ? '와인 정보 수정' : '새 보유 와인 추가';
+  if(!id){
+    document.getElementById('f_quantity').value = '1'; // 새 와인은 수량을 안 적으면 0으로 저장돼 목록에서 안 보이는 문제 방지
+  }
 
   const w = id ? wines.find(x=>x.id===id) : null;
   wineFields.forEach(f=>{
@@ -3390,6 +3393,8 @@ async function saveWineInfo(){
   await persistWine(data);
   await syncPurchaseFromWine(data);
   closePanel();
+  document.getElementById('searchInput').value = ''; // 검색어가 남아있으면 방금 저장한 와인이 필터링돼 안 보일 수 있어서 초기화
+  colorFilter = null;
   switchTab('cellar');
   showToast('저장되었습니다 🍷');
 }
