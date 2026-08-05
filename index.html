@@ -85,6 +85,18 @@
   .search::placeholder{color:rgba(243,233,216,0.4);}
 
   .viewtoggle{display:flex;gap:6px;margin-top:10px;}
+  .sort-bar{display:flex;align-items:center;gap:8px;margin-top:10px;}
+  .sort-bar label{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--gold-soft);opacity:0.85;flex-shrink:0;
+  }
+  .sort-bar select{
+    flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(201,162,75,0.3);
+    background:rgba(201,162,75,0.08);color:var(--cream);
+    font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;font-size:13px;
+  }
+  .sort-bar select option{
+    color:#2b1810;background:#fff;
+  }
   .viewtoggle-btn{
     flex:1;background:rgba(255,255,255,0.05);border:1px solid rgba(201,162,75,0.25);
     color:rgba(243,233,216,0.65);border-radius:8px;padding:8px 6px;font-size:12.5px;font-weight:600;
@@ -413,6 +425,15 @@
       <div class="viewtoggle" id="viewToggleBar">
         <button class="viewtoggle-btn active" id="viewCardBtn" onclick="setViewMode('card')">🗂 카드형</button>
         <button class="viewtoggle-btn" id="viewListBtn" onclick="setViewMode('list')">☰ 리스트형</button>
+      </div>
+      <div class="sort-bar hidden" id="sortBar">
+        <label for="sortSelect">정렬</label>
+        <select id="sortSelect" onchange="setSortMode(this.value)">
+          <option value="purchase">최근 구매순</option>
+          <option value="vintage">빈티지순 (오래된 순)</option>
+          <option value="name">이름순 (가나다)</option>
+          <option value="drinkwindow">시음적기순 (임박한 순)</option>
+        </select>
       </div>
       <div class="purchase-toolbar hidden" id="purchaseToolbar">
         <button class="period-tab-btn" id="periodPanelToggle" onclick="togglePeriodPanel()">🗓 기간 설정</button>
@@ -754,6 +775,7 @@ let currentTab = 'cellar';
 let viewMode = 'card'; // 'card' | 'list'
 let currentCellarView = 'flat'; // 'flat' | 'rack' (보유 와인 탭 표시 방식)
 let colorFilter = null; // 색상 칩 클릭으로 선택된 필터 (null이면 전체)
+let sortMode = 'purchase'; // 'purchase'(최근 구매순, 기본값) | 'vintage'(빈티지순) | 'name'(이름순) | 'drinkwindow'(시음적기순)
 let periodMode = 'recent3'; // 'recent3' | 'thisMonth' | 'thisYear' | 'all' | 'custom'
 let sheetMode = 'wine';       // 'wine' | 'newTaste' | 'taste' | 'editTaste'
 let editingWineId = null;
@@ -2357,6 +2379,40 @@ function toggleMultiLocMode(){
   }
 }
 
+function sortWineList(list, mode){
+  const arr = list.slice();
+  if(mode==='vintage'){
+    arr.sort((a,b)=>{
+      const av = parseInt(a.vintage), bv = parseInt(b.vintage);
+      const aValid = !isNaN(av), bValid = !isNaN(bv);
+      if(!aValid && !bValid) return 0;
+      if(!aValid) return 1; // NV/미상은 뒤로
+      if(!bValid) return -1;
+      return av - bv; // 오래된 빈티지 먼저
+    });
+  } else if(mode==='name'){
+    arr.sort((a,b)=> (a.name||'').localeCompare(b.name||'', 'ko'));
+  } else if(mode==='drinkwindow'){
+    arr.sort((a,b)=>{
+      const af = parseInt(a.drinkfrom), bf = parseInt(b.drinkfrom);
+      const aValid = !isNaN(af), bValid = !isNaN(bf);
+      if(!aValid && !bValid) return 0;
+      if(!aValid) return 1; // 시음적기 미입력은 뒤로
+      if(!bValid) return -1;
+      return af - bf; // 적기가 빨리 오는(또는 이미 온) 와인 먼저
+    });
+  } else { // 'purchase' (기본값): 최근 구매순, 구매일 없으면 등록일 기준
+    arr.sort((a,b)=>{
+      const ad = a.purchasedate, bd = b.purchasedate;
+      if(ad && bd) return bd.localeCompare(ad);
+      if(ad && !bd) return -1;
+      if(!ad && bd) return 1;
+      return (b.createdAt||0)-(a.createdAt||0);
+    });
+  }
+  return arr;
+}
+
 function drinkWindowInfo(w){
   const from = parseInt(w.drinkfrom), to = parseInt(w.drinkto);
   if(!from && !to) return null;
@@ -2405,6 +2461,17 @@ function formatPriceRaw(v){
   return formatted + (hasWon ? '원' : '');
 }
 
+function updateSortBarVisibility(){
+  const show = currentTab==='cellar' && currentCellarView==='flat' && viewMode==='card';
+  document.getElementById('sortBar').classList.toggle('hidden', !show);
+}
+
+function setSortMode(mode){
+  sortMode = mode;
+  render();
+  sSet('ui:sortmode', mode, false).catch(()=>{});
+}
+
 function switchTab(tab){
   currentTab = tab;
   colorFilter = null;
@@ -2414,6 +2481,7 @@ function switchTab(tab){
   document.getElementById('cellarSubToggle').classList.toggle('hidden', tab!=='cellar');
   document.getElementById('viewToggleBar').classList.toggle('hidden', tab==='purchase' || (tab==='cellar' && currentCellarView==='rack'));
   document.getElementById('purchaseToolbar').classList.toggle('hidden', tab!=='purchase');
+  updateSortBarVisibility();
   // 탭 전환 시 접이식 패널은 항상 닫힌 상태로 초기화
   document.getElementById('periodToggleBar').classList.add('hidden');
   document.getElementById('customRangeBar').classList.add('hidden');
@@ -2431,6 +2499,7 @@ function setCellarView(view){
   document.getElementById('subDailyBtn').classList.toggle('active', view==='flat');
   document.getElementById('subCellarBtn').classList.toggle('active', view==='rack');
   document.getElementById('viewToggleBar').classList.toggle('hidden', view==='rack');
+  updateSortBarVisibility();
   render();
 }
 
@@ -2745,9 +2814,10 @@ function render(){
   purchaseRows.classList.add('hidden');
 
   const searchFiltered = currentTab==='cellar' ? cellarAll.filter(matches) : tastedEntries.filter(e=>matches(e.wine));
-  const filtered = colorFilter
+  const colorFiltered = colorFilter
     ? searchFiltered.filter(x => (currentTab==='cellar' ? x.color : x.wine.color) === colorFilter)
     : searchFiltered;
+  const filtered = (currentTab==='cellar') ? sortWineList(colorFiltered, sortMode) : colorFiltered;
 
   if(viewMode==='list' && currentTab==='cellar' && searchFiltered.length>0){
     const totalBottles = filtered.reduce((sum,w)=>sum+qty(w), 0);
@@ -2894,6 +2964,7 @@ function setViewMode(mode){
   viewMode = mode;
   document.getElementById('viewCardBtn').classList.toggle('active', mode==='card');
   document.getElementById('viewListBtn').classList.toggle('active', mode==='list');
+  updateSortBarVisibility();
   render();
   sSet('ui:viewmode', mode, false).catch(()=>{});
 }
@@ -3739,6 +3810,7 @@ async function init(){
   try{ await repairLocationQuantitySync(); }catch(e){ console.error('repairLocationQuantitySync failed', e); }
 
   document.getElementById('loadingMsg').style.display='none';
+  updateSortBarVisibility();
   render();
 }
 let __initCalled = false;
