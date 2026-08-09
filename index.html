@@ -702,8 +702,8 @@
           </fieldset>
 
           <fieldset id="tastingMemoSection">
-            <legend>10. 나의 시음 메모</legend>
-            <div class="field-row single"><div><label>편하게 적어두는 시음 메모 (형식 없이 자유롭게)</label><textarea id="f_tastingmemo" placeholder="예: 2026.7.29 저녁에 오픈 — 예상보다 산도가 높고 신선했음. 다음엔 좀 더 차갑게 서빙."></textarea></div></div>
+            <legend>10. 나의 메모</legend>
+            <div class="field-row single"><div><label>편하게 적어두는 메모 (형식 없이 자유롭게)</label><textarea id="f_tastingmemo" placeholder="예: 2026.7.29 저녁에 오픈 — 예상보다 산도가 높고 신선했음. 다음엔 좀 더 차갑게 서빙."></textarea></div></div>
           </fieldset>
 
         </form>
@@ -3108,6 +3108,10 @@ function vItem(label, value){
   if(value===undefined||value===null||value==='') return '';
   return `<div class="view-item"><div class="view-label">${escapeHtml(label)}</div><div class="view-value">${shrinkParens(value)}</div></div>`;
 }
+function vNote(value){
+  if(value===undefined||value===null||value==='') return '';
+  return `<div class="view-item"><div class="view-value">${shrinkParens(value)}</div></div>`;
+}
 function vSection(title, itemsArr){
   const filtered = itemsArr.filter(Boolean);
   if(filtered.length===0) return '';
@@ -3135,11 +3139,11 @@ function openWineView(id){
     vItem('보관 위치', locationBreakdownText(w) || locationLabel(w.location)),
     vItem('시음적기', drinkWindowInfo(w) ? drinkWindowInfo(w).label : '')
   ]);
-  const producer = vSection('와이너리 & 생산자 특성', [vItem('노트', w.winerynotes)]);
-  const grape = vSection('포도 품종 노트', [vItem('노트', w.grapenotes)]);
-  const vintage = vSection('빈티지 특징', [vItem('노트', w.vintagenotes)]);
-  const refs = vSection('참고 자료', [vItem('참고', w.refs)]);
-  const memo = vSection('나의 시음 메모', [vItem('메모', w.tastingmemo)]);
+  const producer = vSection('와이너리 & 생산자 특성', [vNote(w.winerynotes)]);
+  const grape = vSection('포도 품종 노트', [vNote(w.grapenotes)]);
+  const vintage = vSection('빈티지 특징', [vNote(w.vintagenotes)]);
+  const refs = vSection('참고 자료', [vNote(w.refs)]);
+  const memo = vSection('나의 메모', [vNote(w.tastingmemo)]);
 
   let tastingsHtml = '';
   const tastings = (w.tastings||[]).slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
@@ -3181,7 +3185,7 @@ function openTasteView(wineId, tastingId){
     vItem('단맛/드라이함', t.sweetness), vItem('여운(피니시)', t.finish)
   ]);
   const context = vSection('와인 정보', [
-    vItem('와이너리', w.winery), vItem('포도 품종', w.grape), vItem('잔여 수량', qty(w)+'병'), vItem('나의 시음 메모', w.tastingmemo)
+    vItem('와이너리', w.winery), vItem('포도 품종', w.grape), vItem('잔여 수량', qty(w)+'병'), vItem('나의 메모', w.tastingmemo)
   ]);
 
   const body = overview + look + nose + palate + context;
