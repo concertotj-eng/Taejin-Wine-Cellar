@@ -563,7 +563,7 @@
           </div>
 
           <fieldset id="basicSection">
-            <legend>1. 기본 정보</legend>
+            <legend>기본 정보</legend>
             <div class="field-row">
               <div><label>와인명</label><input type="text" id="f_name"></div>
               <div><label>와이너리(생산자)</label><input type="text" id="f_winery"></div>
@@ -637,38 +637,38 @@
           </fieldset>
 
           <fieldset id="producerSection">
-            <legend>2. 와이너리 &amp; 생산자 특성</legend>
+            <legend>와이너리 &amp; 생산자 특성</legend>
             <div class="field-row single">
               <div><label>역사 / 양조 철학 / 테루아 / 대표 라인업 등</label><textarea id="f_winerynotes"></textarea></div>
             </div>
           </fieldset>
 
           <fieldset id="grapeSection">
-            <legend>3. 포도 품종 노트</legend>
+            <legend>포도 품종 노트</legend>
             <div class="field-row single">
               <div><label>품종 일반 특징 및 이 지역에서의 특징</label><textarea id="f_grapenotes"></textarea></div>
             </div>
           </fieldset>
 
           <fieldset id="vintageSection">
-            <legend>4. 빈티지 특징</legend>
+            <legend>빈티지 특징</legend>
             <div class="field-row single">
               <div><label>그 해 기후 / 작황 / 숙성 잠재력</label><textarea id="f_vintagenotes"></textarea></div>
             </div>
           </fieldset>
 
           <fieldset id="tastingSection">
-            <legend>5. 시음 노트 — 외관</legend>
+            <legend>시음 노트 — 외관</legend>
             <div class="field-row">
               <div><label>시음 날짜</label><input type="text" inputmode="numeric" id="f_tastedate" placeholder="20260729" oninput="formatDateInput(this)"></div>
               <div><label>색상 / 농도</label><input type="text" id="f_look" placeholder="예: 짙은 가넷, 가장자리는 옅은 벽돌빛"></div>
             </div>
             <div class="field-row single"><div><label>점도(다리)</label><input type="text" id="f_legs" placeholder="예: 다리가 천천히 흘러내림 (높은 알코올·당도)"></div></div>
-            <legend style="margin-top:12px;">6. 시음 노트 — 향</legend>
+            <legend style="margin-top:12px;">시음 노트 — 향</legend>
             <div class="field-row single"><div><label>1차 향 (과일/꽃)</label><input type="text" id="f_nose1" placeholder="예: 잘 익은 블랙체리, 카시스, 제비꽃"></div></div>
             <div class="field-row single"><div><label>2차 향 (발효/양조 유래)</label><input type="text" id="f_nose2" placeholder="예: 은은한 브리오슈, 요거트 뉘앙스"></div></div>
             <div class="field-row single"><div><label>3차 향 (숙성 유래 - 오크/가죽/흙 등)</label><input type="text" id="f_nose3" placeholder="예: 삼나무, 감초, 담배 상자"></div></div>
-            <legend style="margin-top:12px;">7. 시음 노트 — 맛</legend>
+            <legend style="margin-top:12px;">시음 노트 — 맛</legend>
             <div class="field-row">
               <div><label>산도</label><input type="text" id="f_acidity" placeholder="예: 신선하고 상큼한 산도"></div>
               <div><label>타닌</label><input type="text" id="f_tannin" placeholder="예: 촘촘하지만 고운 벨벳 같은 타닌"></div>
@@ -681,7 +681,7 @@
           </fieldset>
 
           <fieldset id="reviewSection">
-            <legend>8. 총평 &amp; 페어링</legend>
+            <legend>총평 &amp; 페어링</legend>
             <div class="field-row">
               <div><label>개인 점수 (5점 만점)</label><input type="number" id="f_score" min="0" max="5" step="0.5"></div>
               <div><label>재구매 의사</label>
@@ -698,12 +698,12 @@
           </fieldset>
 
           <fieldset id="refsSection">
-            <legend>9. 참고 자료</legend>
+            <legend>참고 자료</legend>
             <div class="field-row single"><div><label>평론가 평점 / 추가로 찾아본 정보</label><textarea id="f_refs"></textarea></div></div>
           </fieldset>
 
           <fieldset id="tastingMemoSection">
-            <legend>10. 나의 메모</legend>
+            <legend>나의 메모</legend>
             <div class="field-row single"><div><label>편하게 적어두는 메모 (형식 없이 자유롭게)</label><textarea id="f_tastingmemo" placeholder="예: 2026.7.29 저녁에 오픈 — 예상보다 산도가 높고 신선했음. 다음엔 좀 더 차갑게 서빙."></textarea></div></div>
           </fieldset>
 
@@ -3189,7 +3189,13 @@ function openTasteView(wineId, tastingId){
     vItem('단맛/드라이함', t.sweetness), vItem('여운(피니시)', t.finish)
   ]);
   const context = vSection('와인 정보', [
-    vItem('와이너리', w.winery), vItem('포도 품종', w.grape), vItem('잔여 수량', qty(w)+'병'), vItem('나의 메모', w.tastingmemo)
+    vItem('와이너리', w.winery), vItem('국가', w.country), vItem('지역', w.region),
+    vItem('포도 품종', w.grape), vItem('등급/분류', w.grade), vItem('알코올 도수', w.abv),
+    vItem('잔여 수량', qty(w)+'병'),
+    vItem('가격', formatPriceRaw(w.price)), vItem('구매처', w.purchaseplace), vItem('구매일', w.purchasedate),
+    vItem('보관 위치', locationBreakdownText(w) || locationLabel(w.location)),
+    vItem('시음적기', drinkWindowInfo(w) ? drinkWindowInfo(w).label : ''),
+    vItem('나의 메모', w.tastingmemo)
   ]);
 
   const body = overview + look + nose + palate + context;
