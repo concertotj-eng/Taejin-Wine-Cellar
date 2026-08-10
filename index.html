@@ -2866,15 +2866,13 @@ function render(){
         bucket[key].push({ wine: w, qtyHere: entry.qty });
       });
     });
-    let firstOpen = false;
     const locHtml = [];
     for(const loc of locKeys){
       const items = bucket[loc];
       if(items.length===0 && (q || loc!=='외부')) continue; // 검색 중이거나 빈 셀러 단은 숨기되, '외부'는 기본으로 항상 노출
       const locBottles = items.reduce((sum,it)=>sum+it.qtyHere, 0);
-      const openAttr = (!firstOpen && items.length>0) ? (firstOpen=true, ' open') : '';
       locHtml.push(`
-        <details class="purchase-group"${openAttr}>
+        <details class="purchase-group">
           <summary><span class="pg-label">${locationLabel(loc)}</span><span class="pg-total">${items.length}종 · ${locBottles}병</span></summary>
           <div class="purchase-group-body">${items.length ? items.map(it=>locRowHtml(it.wine, it.qtyHere, loc)).join('') : '<div class="view-empty">비어있어요</div>'}</div>
         </details>`);
