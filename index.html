@@ -219,6 +219,7 @@
   }
   .card-vintage{
     font-family:'Pretendard',-apple-system,BlinkMacSystemFont,'Apple SD Gothic Neo','Malgun Gothic','Noto Sans KR',sans-serif;font-weight:700;font-size:15px;line-height:1.15;color:var(--wine-700);
+    margin-top:4px;
   }
   .card-vintage.long{font-size:12px;font-weight:600;letter-spacing:0.2px;}
   .paren-sm{font-size:0.78em;opacity:0.8;}
@@ -2722,7 +2723,6 @@ function render(){
     list.classList.add('hidden');
     rows.classList.add('hidden');
     document.getElementById('cellarRackContainer').classList.add('hidden');
-    document.getElementById('countPurchase').textContent = purchases.length;
 
     const matchesP = (p)=>{
       if(!q) return true;
@@ -2798,6 +2798,7 @@ function render(){
 
   document.getElementById('countCellar').textContent = cellarAll.reduce((sum,w)=>sum+qty(w), 0);
   document.getElementById('countTasted').textContent = tastedEntries.length;
+  document.getElementById('countPurchase').textContent = purchases.length;
 
   const cellarRackContainer = document.getElementById('cellarRackContainer');
 
