@@ -3194,11 +3194,14 @@ function openTasteView(wineId, tastingId){
     vItem('잔여 수량', qty(w)+'병'),
     vItem('가격', formatPriceRaw(w.price)), vItem('구매처', w.purchaseplace), vItem('구매일', w.purchasedate),
     vItem('보관 위치', locationBreakdownText(w) || locationLabel(w.location)),
-    vItem('시음적기', drinkWindowInfo(w) ? drinkWindowInfo(w).label : ''),
-    vItem('나의 메모', w.tastingmemo)
+    vItem('시음적기', drinkWindowInfo(w) ? drinkWindowInfo(w).label : '')
   ]);
+  const producerNote = vSection('와이너리 & 생산자 특성', [vNote(w.winerynotes)]);
+  const grapeNote = vSection('포도 품종 노트', [vNote(w.grapenotes)]);
+  const vintageNote = vSection('빈티지 특징', [vNote(w.vintagenotes)]);
+  const myMemo = vSection('나의 메모', [vNote(w.tastingmemo)]);
 
-  const body = overview + look + nose + palate + context;
+  const body = overview + look + nose + palate + context + producerNote + grapeNote + vintageNote + myMemo;
   document.getElementById('viewBody').innerHTML = body || '<div class="view-empty">기록된 정보가 없어요.</div>';
   document.getElementById('viewEditBtn').onclick = ()=>{ closeView(); openEditTaste(w.id, t.id); };
   document.getElementById('viewOverlay').classList.add('open');
