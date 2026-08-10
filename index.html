@@ -2631,8 +2631,11 @@ async function syncWineFromPurchase(p){
 
   let targetWine = p.linkedWineId ? wines.find(w=>w.id===p.linkedWineId) : null;
   if(!targetWine){
-    // 이름이 정확히 같은 기존 보유 와인이 있으면 새로 만들지 않고 그 와인에 합침
-    targetWine = wines.find(w => (w.name||'').trim().toLowerCase() === p.name.trim().toLowerCase());
+    // 이름이 똑같은 와인이 '정확히 하나'일 때만 그 와인에 합침.
+    // 두 개 이상 겹치면(예: 같은 이름의 다른 빈티지) 잘못 추측해서 엉뚱한 와인 수량을 건드리지 않도록,
+    // 병합하지 않고 새 와인으로 따로 만듦 (사용자가 나중에 직접 정리 가능)
+    const nameMatches = wines.filter(w => (w.name||'').trim().toLowerCase() === p.name.trim().toLowerCase());
+    if(nameMatches.length === 1) targetWine = nameMatches[0];
   }
 
   if(targetWine){
@@ -3591,302 +3594,29 @@ async function syncAllWinePurchases(){
   }));
 }
 
-const forceCellarTier1Ids = [
-  'chateau-cantemerle-2017','domaine-mia-clos-la-marche-2020','gd-vajra-albe-2021',
-  'bedeau-cossard','bigotes-cossard','la-stoppa-macchiona-2012','cakebread-chardonnay-2021',
-  'jean-foillard-morgon-cote-du-py-2020','saint-romble-sancerre-2020'
-];
 
-async function fixTier1Locations(){
-  for(const wid of forceCellarTier1Ids){
-    const w = wines.find(x=>x.id===wid);
-    if(w && w.location !== '1'){
-      const updated = Object.assign({}, w, { location: '1' });
-      try{ await persistWine(updated); }catch(e){ console.error('fix location error', e); }
-    }
-  }
-}
 
 // (예전에 있던 일회성 수량 강제 고정 로직은 제거했어요 — 시음 기록에 따른 정상적인 수량 변화를 방해하고 있었어요)
-async function fixQuantities(){
-  // 더 이상 강제 고정할 항목 없음. 필요 시 여기에 임시로 추가하고, 확인 후 반드시 다시 지워주세요.
-}
 
-async function oneTimeCorrections(){
-  // 예전 강제 고정 버그로 잘못 4병으로 되돌아가 있던 Maurice를 3병으로 딱 한 번만 바로잡음 (마커로 재실행 방지)
-  const markerKey = 'onetimefix:maurice-qty-2026';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    const w = wines.find(x=>x.id==='marc-delienne-maurice-2018');
-    if(w){
-      const updated = Object.assign({}, w, { quantity: 3 });
-      try{ await persistWine(updated); }catch(err){ console.error('one-time fix error', err); }
-    }
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-async function oneTimeLocationFix_fontaineSaintMartin(){
-  const markerKey = 'onetimefix:fontaine-saint-martin-loc9';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    const w = wines.find(x=>x.id==='michel-gros-fontaine-saint-martin-blanc-2022');
-    if(w && w.location !== '9'){
-      const updated = Object.assign({}, w, { location: '9', locations: null });
-      try{ await persistWine(updated); }catch(err){ console.error('one-time location fix error', err); }
-    }
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-async function oneTimeLocationFix_bordeaux13to3(){
-  const markerKey = 'onetimefix:bordeaux13-loc3';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    const ids = [
-      'chateau-talbot-2017','chateau-talbot-2021','chateau-talbot-2018',
-      'chateau-haut-batailley-2019','chateau-branaire-ducru-2019',
-      'ferraton-cote-rotie-eglantine-2018','chateau-montrose-2011',
-      'chateau-pontet-canet-2019','chateau-belgrave-2015',
-      'saint-cosme-cote-rotie-2020','sociando-mallet-jean-gautreau-2014',
-      'chateau-montus-2018','chateau-la-lagune-2015'
-    ];
-    for(const wid of ids){
-      const w = wines.find(x=>x.id===wid);
-      if(w && w.location !== '3'){
-        const updated = Object.assign({}, w, { location: '3', locations: null });
-        try{ await persistWine(updated); }catch(err){ console.error('bordeaux13 location fix error', wid, err); }
-      }
-    }
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-async function oneTimeLocationFix_to2단(){
-  const markerKey = 'onetimefix:ten-wines-loc2';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    const ids = [
-      'kongsgaard-chardonnay-2023','kongsgaard-chardonnay-2021',
-      'schueller-gewurztraminer-bild-2022','schueller-pinot-gris-reserve-2022',
-      'werlitsch-ex-vero-iii-2018','pataille-marsannay-2019',
-      'michel-gros-nsg-les-chaliots-2020','michel-gros-hcdn-au-vallon-2022',
-      'shafer-one-point-five-2019','picchioni-buttafuoco-bricco-riva-bianca-2018'
-    ];
-    for(const wid of ids){
-      const w = wines.find(x=>x.id===wid);
-      if(w && w.location !== '2'){
-        const updated = Object.assign({}, w, { location: '2', locations: null });
-        try{ await persistWine(updated); }catch(err){ console.error('loc2 fix error', wid, err); }
-      }
-    }
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-async function oneTimeLocationFix_to4단(){
-  const markerKey = 'onetimefix:italy12-loc4';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    const ids = [
-      'antinori-tignanello-2020','tenuta-san-guido-sassicaia-2015',
-      'cordero-montezemolo-monfalletto-2017','sena-2017',
-      'catena-zapata-nicolas-2018','bibi-graetz-testamatta-2016',
-      'giodo-brunello-2018','domenico-clerico-ciabot-mentin-ginestra-2018',
-      'domenico-clerico-barolo-monforte-2017','le-pupille-saffredi-2020',
-      'vietti-barolo-castiglione-2019','peter-michael-esprit-des-pavots-2006'
-    ];
-    for(const wid of ids){
-      const w = wines.find(x=>x.id===wid);
-      if(w && w.location !== '4'){
-        const updated = Object.assign({}, w, { location: '4', locations: null });
-        try{ await persistWine(updated); }catch(err){ console.error('loc4 fix error', wid, err); }
-      }
-    }
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-async function repairLocationQuantitySync(){
-  // 여러 위치로 나눠 보관 중인 와인은, 위치별 수량의 합이 항상 총 보유수량과 일치해야 함.
-  // 수동 편집 등으로 어긋난 경우를 매번 조용히 감지해서 바로잡음 (locations 배열이 유일한 진실)
-  let fixedCount = 0;
-  for(const w of wines){
-    if(!Array.isArray(w.locations) || w.locations.length===0) continue;
-    const cleanLocs = w.locations.map(r=>({ loc:r.loc||'외부', qty:parseInt(r.qty)||0 })).filter(r=>r.qty>0);
-    const sum = cleanLocs.reduce((s,r)=>s+r.qty, 0);
-    const storedQty = parseInt(w.quantity)||0;
-    const needsLocFix = JSON.stringify(cleanLocs) !== JSON.stringify(w.locations);
-    const needsQtyFix = storedQty !== sum;
-    if(needsLocFix || needsQtyFix){
-      let patch;
-      if(cleanLocs.length<=1){
-        // 정리하고 보니 위치가 1곳 이하로 남으면 단일 위치로 단순화
-        patch = { locations: null, location: cleanLocs.length===1 ? cleanLocs[0].loc : (w.location||'외부'), quantity: sum };
-      } else {
-        patch = { locations: cleanLocs, location: 'multi', quantity: sum };
-      }
-      const updated = Object.assign({}, w, patch);
-      try{ await persistWine(updated); fixedCount++; }catch(err){ console.error('location-quantity repair error', w.id, err); }
-    }
-  }
-  if(fixedCount>0) console.log(`위치별 수량 동기화 보정: ${fixedCount}건`);
-}
 
-async function oneTimeCoreFieldSync(){
-  // 위치/시음적기/수량을 코드(seedWines) 기준으로 딱 한 번만 정확히 맞춤.
-  // - 시음 기록(tastings)은 절대 건드리지 않음
-  // - 여러 위치로 나눠 보관 중인(locations 배열) 와인은 건드리지 않음 (직접 설정하신 걸 존중)
-  // - 수량은 코드 기본값에서, 실제로 남긴 시음 기록 수만큼 뺀 값으로 맞춤 (마신 기록 존중)
-  const markerKey = 'onetimefix:core-field-sync-2026';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    await Promise.all(seedWines.map(async (seed)=>{
-      const w = wines.find(x=>x.id===seed.id);
-      if(!w) return;
-      const hasCustomMultiLoc = Array.isArray(w.locations) && w.locations.length>1;
-      const tastingCount = Array.isArray(w.tastings) ? w.tastings.length : 0;
-      const correctedQty = Math.max(0, (parseInt(seed.quantity)||0) - tastingCount);
 
-      const patch = {};
-      if(!hasCustomMultiLoc && w.location !== seed.location) patch.location = seed.location;
-      if(w.drinkfrom !== seed.drinkfrom) patch.drinkfrom = seed.drinkfrom;
-      if(w.drinkto !== seed.drinkto) patch.drinkto = seed.drinkto;
-      if(!hasCustomMultiLoc && qty(w) !== correctedQty) patch.quantity = correctedQty;
 
-      if(Object.keys(patch).length>0){
-        const updated = Object.assign({}, w, patch);
-        try{ await persistWine(updated); }catch(err){ console.error('core field sync error', seed.id, err); }
-      }
-    }));
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-async function oneTimeLocationFix_tier9batch(){
-  const markerKey = 'onetimefix:tier9-batch-loc9-2026';
-  try{
-    await sGet(markerKey, false);
-    return; // 이미 적용됨
-  }catch(e){
-    const ids = [
-      'loriot-pagel-champagne-bdb-2017',
-      'bruno-clair-marsannay-2022',
-      'taille-aux-loups-montlouis-clos-mosny-2021',
-      'despagne-girolate-2015',
-      'roc-breia-chardonnay-2023'
-    ];
-    await Promise.all(ids.map(async (wid)=>{
-      const w = wines.find(x=>x.id===wid);
-      if(w && w.location !== '9'){
-        const updated = Object.assign({}, w, { location: '9', locations: null });
-        try{ await persistWine(updated); }catch(err){ console.error('tier9 batch fix error', wid, err); }
-      }
-    }));
-    try{ await sSet(markerKey, '1', false); }catch(err){ /* ignore */ }
-  }
-}
 
-const forceDrinkWindowFixes = {
-  'plume-geantet-chardonnay-2022': ['2024','2030'],
-  'chateau-talbot-2017': ['2023','2038'],
-  'chateau-talbot-2018': ['2025','2045'],
-  'chateau-talbot-2021': ['2026','2040'],
-  'chateau-haut-batailley-2019': ['2026','2048'],
-  'chateau-branaire-ducru-2019': ['2026','2045'],
-  'ferraton-cote-rotie-eglantine-2018': ['2022','2035'],
-  'chateau-montrose-2011': ['2020','2040'],
-  'chateau-pontet-canet-2019': ['2027','2050'],
-  'chateau-belgrave-2015': ['2020','2035'],
-  'saint-cosme-cote-rotie-2020': ['2024','2038'],
-  'sociando-mallet-jean-gautreau-2014': ['2021','2036'],
-  'chateau-montus-2018': ['2023','2038'],
-  'chateau-la-lagune-2015': ['2020','2035'],
-  'marc-delienne-maurice-2018': ['2021','2028'],
-  'michel-gros-fontaine-saint-martin-blanc-2022': ['2024','2032'],
-  'schueller-gewurztraminer-bild-2022': ['2024','2032'],
-  'schueller-pinot-gris-reserve-2022': ['2024','2032'],
-  'pataille-marsannay-2019': ['2022','2032'],
-  'michel-gros-nsg-les-chaliots-2020': ['2024','2036'],
-  'michel-gros-hcdn-au-vallon-2022': ['2024','2030'],
-  'chateau-cantemerle-2017': ['2022','2033'],
-  'domaine-mia-clos-la-marche-2020': ['2023','2030'],
-  'jean-foillard-morgon-cote-du-py-2020': ['2022','2032'],
-  'saint-romble-sancerre-2020': ['2022','2028'],
-  'veuve-clicquot-yellow-label': ['2025','2027'],
-  'bgb-aligote-2022': ['2023','2027'],
-  'couturier-macon-loche-2018': ['2020','2027'],
-  'bollinger-special-cuvee': ['2025','2029'],
-  'antinori-tignanello-2020': ['2026','2045'],
-  'tenuta-san-guido-sassicaia-2015': ['2022','2045'],
-  'cordero-montezemolo-monfalletto-2017': ['2023','2038'],
-  'bibi-graetz-testamatta-2016': ['2021','2036'],
-  'giodo-brunello-2018': ['2023','2038'],
-  'domenico-clerico-ciabot-mentin-ginestra-2018': ['2025','2042'],
-  'domenico-clerico-barolo-monforte-2017': ['2023','2038'],
-  'le-pupille-saffredi-2020': ['2024','2042'],
-  'vietti-barolo-castiglione-2019': ['2025','2042'],
-  'picchioni-buttafuoco-bricco-riva-bianca-2018': ['2022','2030'],
-  'tenuta-buon-tempo-brunello-2015': ['2022','2040'],
-  'gd-vajra-albe-2021': ['2024','2036'],
-  'la-stoppa-macchiona-2012': ['2018','2032'],
-  'peter-michael-esprit-des-pavots-2006': ['2012','2026'],
-  'kongsgaard-chardonnay-2023': ['2025','2035'],
-  'kongsgaard-chardonnay-2021': ['2023','2033'],
-  'shafer-one-point-five-2019': ['2022','2038'],
-  'cakebread-chardonnay-2021': ['2023','2028'],
-  'sena-2017': ['2022','2038'],
-  'catena-zapata-nicolas-2018': ['2022','2038'],
-  'werlitsch-ex-vero-iii-2018': ['2022','2032'],
-  'bedeau-cossard': ['2022','2027'],
-  'bigotes-cossard': ['2022','2026'],
-  'la-stoppa-ageno': ['2023','2032']
-};
-
-async function fixVintageCorrections(){
-  const w = wines.find(x=>x.id==='fantini-cinque-autoctoni-nv');
-  if(w && w.vintage !== '2017'){
-    const updated = Object.assign({}, w, {
-      vintage: '2017',
-      drinkfrom: '2019', drinkto: '2029',
-      vintagenotes: '2017년은 아브루초·풀리아 등 이탈리아 남부 전역이 무덥고 건조했던 해로, 수확량은 예년보다 줄었지만 포도의 당도와 응축감이 매우 높았던 빈티지로 평가받아요. 남부 특유의 진하고 파워풀한 스타일이 한층 더 도드라진 해예요.'
-    });
-    try{ await persistWine(updated); }catch(e){ console.error('fix vintage error', e); }
-  }
-}
-
-async function fixDrinkWindows(){
-  for(const wid in forceDrinkWindowFixes){
-    const w = wines.find(x=>x.id===wid);
-    if(!w) continue;
-    const [df, dt] = forceDrinkWindowFixes[wid];
-    if(w.drinkfrom !== df || w.drinkto !== dt){
-      const updated = Object.assign({}, w, { drinkfrom: df, drinkto: dt });
-      try{ await persistWine(updated); }catch(e){ console.error('fix drink window error', e); }
-    }
-  }
-}
 
 async function init(){
   try{ await loadWines(); }catch(e){ console.error('loadWines failed', e); }
   try{ await loadPurchases(); }catch(e){ console.error('loadPurchases failed', e); }
 
-  // (예전에 특정 와인들을 한 번씩 바로잡던 보정 코드들은 여기서 정리했어요.
-  //  seedWines 자체가 이미 최신·정확한 값을 담고 있어서, 새로 만드는 저장소에는 필요 없어요.
-  //  위치별 수량 정합성만 상시로 가볍게 점검해요.)
-  try{ await repairLocationQuantitySync(); }catch(e){ console.error('repairLocationQuantitySync failed', e); }
+  // (예전엔 여기서 "위치별 수량 자동 보정"을 매번 자동으로 다시 저장했는데,
+  //  이런 자동 덮어쓰기 자체가 데이터 유실 위험이 있어서 완전히 없앴어요.
+  //  이제 앱은 켜질 때 절대 스스로 데이터를 고쳐 쓰지 않고, 오직 불러오기만 해요.
+  //  사용자가 직접 화면에서 수정을 눌러 저장할 때만 데이터가 바뀌어요.)
 
   document.getElementById('loadingMsg').style.display='none';
   updateSortBarVisibility();
