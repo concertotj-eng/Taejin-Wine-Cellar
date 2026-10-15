@@ -468,6 +468,8 @@
 
   <div class="wrap">
     <div id="loadingMsg" style="color:rgba(243,233,216,0.5);font-size:13px;padding-top:10px;">불러오는 중...</div>
+    <!-- 데이터 상태 알림: 목록 일부만 불러왔을 때 경고 / 새 시드 와인이 있을 때 수동 추가 버튼 -->
+    <div id="dataNotice" class="hidden" style="margin:10px 0 4px;padding:12px 14px;border-radius:12px;font-size:13.5px;line-height:1.55;background:rgba(201,162,75,0.12);border:1px solid rgba(201,162,75,0.45);color:var(--gold-soft);"></div>
     <div class="list-summary hidden" id="listSummary"></div>
     <div class="list" id="list"></div>
     <div class="rows hidden" id="rows"></div>
@@ -2202,13 +2204,17 @@ async function sDelete(key, shared){
   return { key, deleted:true, shared: !!shared };
 }
 
+const LIST_TIMEOUT = 10000; // 목록 조회는 문서 전체를 훑어서 느릴 수 있으므로 단건 조회보다 넉넉하게 기다림
+const listFailed = {}; // prefix별로 Firebase 목록 조회가 실패했는지 기록 (실패 시 화면에 경고)
+
 async function sList(prefix, shared){
   let realKeys = [];
   if(window.__fb){
     try{
-      const r = await withTimeout(window.__fb.list(prefix), STORAGE_TIMEOUT);
+      const r = await withTimeout(window.__fb.list(prefix), LIST_TIMEOUT);
       realKeys = (r && r.keys) ? r.keys : [];
-    }catch(e){ console.warn('firebase list 실패/타임아웃', prefix, e); }
+      listFailed[prefix] = false;
+    }catch(e){ console.warn('firebase list 실패/타임아웃', prefix, e); listFailed[prefix] = true; }
   }
   if(hasClaudeStorage){
     try{
@@ -2230,24 +2236,42 @@ async function getIndex(prefix){
   }catch(e){ /* 인덱스 아직 없음 */ }
   return [];
 }
+// 인덱스 수정은 "읽고 → 고치고 → 다시 쓰기" 구조라, 여러 개가 동시에 실행되면
+// 서로의 변경을 덮어써서 항목이 사라짐 (2026-10 와인 인덱스 137→55 손상의 원인).
+// 그래서 인덱스 수정은 반드시 이 줄(queue)에 세워 한 번에 하나씩만 실행함.
+const indexQueue = { wine: Promise.resolve(), purchase: Promise.resolve() };
+function runIndexOp(prefix, op){
+  const prev = indexQueue[prefix] || Promise.resolve();
+  const next = prev.then(op, op);
+  indexQueue[prefix] = next.catch(()=>{});
+  return next;
+}
+async function getIndexFresh(prefix){
+  memStore.delete('idx:'+prefix); // 이 탭의 메모리 사본이 아니라 서버의 최신 인덱스를 기준으로 수정 (다른 기기 변경분 보존)
+  return getIndex(prefix);
+}
 async function addToIndex(prefix, id){
   if(indexCache[prefix] && indexCache[prefix].has(id)) return; // 이미 인덱스에 있는 걸 아니까 네트워크 확인 생략
-  try{
-    const idx = await getIndex(prefix);
-    if(!idx.includes(id)){
-      idx.push(id);
-      await sSet('idx:'+prefix, JSON.stringify(idx), false);
-    }
-    if(indexCache[prefix]) indexCache[prefix].add(id);
-  }catch(e){ console.error('addToIndex failed', e); }
+  return runIndexOp(prefix, async ()=>{
+    try{
+      const idx = await getIndexFresh(prefix);
+      if(!idx.includes(id)){
+        idx.push(id);
+        await sSet('idx:'+prefix, JSON.stringify(idx), false);
+      }
+      if(indexCache[prefix]) indexCache[prefix].add(id);
+    }catch(e){ console.error('addToIndex failed', e); }
+  });
 }
 async function removeFromIndex(prefix, id){
-  try{
-    const idx = await getIndex(prefix);
-    const filtered = idx.filter(x=>x!==id);
-    await sSet('idx:'+prefix, JSON.stringify(filtered), false);
-    if(indexCache[prefix]) indexCache[prefix].delete(id);
-  }catch(e){ console.error('removeFromIndex failed', e); }
+  return runIndexOp(prefix, async ()=>{
+    try{
+      const idx = await getIndexFresh(prefix);
+      const filtered = idx.filter(x=>x!==id);
+      await sSet('idx:'+prefix, JSON.stringify(filtered), false);
+      if(indexCache[prefix]) indexCache[prefix].delete(id);
+    }catch(e){ console.error('removeFromIndex failed', e); }
+  });
 }
 async function listKeysRobust(prefix){
   // storage.list()가 되는 환경에서는 그 결과와 자체 인덱스를 합쳐서 반환,
@@ -2259,7 +2283,28 @@ async function listKeysRobust(prefix){
     listedIds = keys.map(k => k.startsWith(prefix+':') ? k.slice(prefix.length+1) : k);
   }catch(e){ /* list 미지원 환경 - 인덱스로 대체 */ }
   const indexedIds = await getIndex(prefix);
+  // indexCache에는 "실제로 인덱스에 들어 있는 것"만 넣음. 목록 조회로만 발견된 항목까지 넣으면,
+  // 그 항목을 저장할 때 addToIndex가 "이미 있음"으로 착각하고 인덱스 추가를 건너뛰게 됨.
+  if(indexCache[prefix]) indexedIds.forEach(id=>indexCache[prefix].add(id));
   return Array.from(new Set([...listedIds, ...indexedIds]));
+}
+
+/* ---------- 데이터 상태 알림 ---------- */
+const dataNoticeState = { partial: false, pendingSeeds: 0 };
+function renderDataNotice(){
+  const el = document.getElementById('dataNotice');
+  if(!el) return;
+  const parts = [];
+  if(dataNoticeState.partial){
+    parts.push(`⚠️ 서버 연결이 느려 와인 목록을 <b>일부만</b> 불러왔을 수 있어요. 지금 보이는 목록이 예전 상태처럼 보이면 수정·기록하기 전에 <b>새로고침</b>해주세요.
+      <div style="margin-top:8px;"><button class="backup-btn" onclick="location.reload()">↻ 새로고침</button></div>`);
+  }
+  if(dataNoticeState.pendingSeeds>0){
+    parts.push(`🍷 새로 준비된 와인 데이터 <b>${dataNoticeState.pendingSeeds}종</b>이 아직 셀러에 추가되지 않았어요.
+      <div style="margin-top:8px;"><button class="backup-btn" id="addSeedsBtn" onclick="addPendingSeeds()">+ ${dataNoticeState.pendingSeeds}종 추가하기</button></div>`);
+  }
+  el.innerHTML = parts.join('<div style="height:10px"></div>');
+  el.classList.toggle('hidden', parts.length===0);
 }
 
 async function seedIfMissing(seed){
@@ -2290,7 +2335,7 @@ async function loadWines(){
   }catch(e){ /* no saved preference yet */ }
   try{
     const ids = await listKeysRobust('wine');
-    ids.forEach(id=>indexCache.wine.add(id));
+    dataNoticeState.partial = !!(window.__fb && listFailed['wine:']);
     const results = await Promise.all(ids.map(async (id)=>{
       try{
         const r = await sGet('wine:'+id, false);
@@ -2305,18 +2350,47 @@ async function loadWines(){
       return null;
     }));
     const loaded = results.filter(Boolean);
-    const seedResults = await Promise.all(seedWines.map(async (seed)=>{
-      if(loaded.some(w=>w.id===seed.id)) return null; // 이미 목록에 있으면 중복 시딩 시도 안 함
-      try{ return await seedIfMissing(seed); }catch(e){ return null; }
-    }));
-    seedResults.forEach(added=>{ if(added) loaded.push(added); });
     loaded.sort((a,b)=> (b.createdAt||0)-(a.createdAt||0));
     wines = loaded;
+    // 시드 와인은 더 이상 켤 때 자동으로 저장하지 않음 (로드 시 자동 쓰기 금지 원칙).
+    // 아직 추가 안 된 시드가 몇 종인지 "읽기만" 해서, 사용자가 버튼을 눌러야 추가됨.
+    // 목록을 일부만 불러온 상태에서는 판단이 틀릴 수 있으므로 확인하지 않음.
+    if(!dataNoticeState.partial){
+      try{ pendingSeeds = await findPendingSeeds(loaded); }catch(e){ pendingSeeds = []; }
+      dataNoticeState.pendingSeeds = pendingSeeds.length;
+    }
   }catch(e){
     console.error('load error', e);
   }
   document.getElementById('loadingMsg').style.display='none';
+  renderDataNotice();
   render();
+}
+
+let pendingSeeds = [];
+async function findPendingSeeds(loaded){
+  const loadedIds = new Set(loaded.map(w=>w.id));
+  const candidates = seedWines.filter(s=>!loadedIds.has(s.id));
+  const checks = await Promise.all(candidates.map(async (seed)=>{
+    try{ await sGet('seedmark:'+seed.id, false); return null; } // 예전에 추가된 적 있음(삭제한 와인도 다시 넣지 않음)
+    catch(e){ return seed; }
+  }));
+  return checks.filter(Boolean);
+}
+async function addPendingSeeds(){
+  const btn = document.getElementById('addSeedsBtn');
+  if(btn) btn.disabled = true;
+  let added = 0;
+  // 반드시 한 개씩 순서대로 (동시에 저장하면 인덱스가 손상됨)
+  for(const seed of pendingSeeds){
+    const w = await seedIfMissing(seed);
+    if(w){ added++; if(!wines.some(x=>x.id===w.id)) wines.unshift(w); }
+  }
+  pendingSeeds = [];
+  dataNoticeState.pendingSeeds = 0;
+  renderDataNotice();
+  render();
+  showToast(`${added}종을 셀러에 추가했어요 🍷`);
 }
 
 function exportBackup(){
@@ -2578,7 +2652,7 @@ function parsePriceNumber(v){
 async function loadPurchases(){
   try{
     const ids = await listKeysRobust('purchase');
-    ids.forEach(id=>indexCache.purchase.add(id));
+    if(window.__fb && listFailed['purchase:']){ dataNoticeState.partial = true; renderDataNotice(); }
     const results = await Promise.all(ids.map(async (id)=>{
       try{
         const r = await sGet('purchase:'+id, false);
