@@ -3553,8 +3553,23 @@ async function saveNewTasteWine(){
   showToast('시음 기록이 저장되었습니다 📝');
 }
 
+async function freshWineFromServer(id){
+  // 다른 화면·기기에서 바뀐 내용을 덮어쓰지 않도록, 저장 직전에 서버의 최신 기록을 다시 읽음 (실패하면 화면의 기록 사용)
+  try{
+    memStore.delete('wine:'+id);
+    const r = await sGet('wine:'+id, false);
+    if(r && r.value){
+      const w = JSON.parse(r.value);
+      if(!Array.isArray(w.tastings)) w.tastings = [];
+      if(w.quantity===undefined || w.quantity===null || w.quantity==='') w.quantity = 0;
+      return w;
+    }
+  }catch(e){ console.warn('fresh read failed, using in-memory copy', id, e); }
+  return wines.find(x=>x.id===id) || null;
+}
+
 async function saveTasteLog(){
-  const w = wines.find(x=>x.id===editingWineId);
+  const w = await freshWineFromServer(editingWineId);
   if(!w) return;
   const tasting = { id: 't'+Date.now(), createdAt: Date.now() };
   tastingFields.forEach(f=>{
