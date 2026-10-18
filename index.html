@@ -3587,6 +3587,11 @@ async function saveTasteLog(){
   closePanel();
   // 보유 와인 탭에 그대로 머물러, 방금 줄어든 수량을 바로 확인할 수 있도록 함
   render();
+  if(typeof renderReview==='function' && document.getElementById('reviewPanel')){
+    renderReview();
+    const row = document.getElementById('rv-'+updated.id);
+    if(row) row.scrollIntoView({behavior:'smooth', block:'center'});
+  }
   const msg = updated.quantity===0 ? '기록 완료 · 마지막 병을 다 드셨네요 🍷' : `기록 완료 · 잔여 ${updated.quantity}병`;
   showToast(msg);
 }
@@ -3784,13 +3789,15 @@ setTimeout(()=>{
   #reviewPanel .rv-btn{border:1px solid #b8964a;background:#fff8e8;color:#5a3e10;border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;}
   #reviewPanel .rv-btn.primary{background:#7a2434;border-color:#7a2434;color:#fff;}
   #reviewPanel .rv-btn.danger{background:#fff;border-color:#c0504d;color:#a32d2d;}
+  #reviewPanel .rv-btn.drank{background:#f3e3e6;border-color:#7a2434;color:#7a2434;}
+  #reviewPanel .rv-btn[disabled]{opacity:0.4;}
   #reviewPanel .rv-btn.on{background:var(--gold);border-color:var(--gold);color:#2a1810;}
   #reviewPanel .rv-done{font-size:12.5px;color:#3b6d11;margin-top:8px;font-weight:600;}
 </style>
 <script>
 const REVIEW_IDS = ["bgb-aligote-2022","bollinger-special-cuvee","couturier-macon-loche-2018","jean-foillard-morgon-cote-du-py-2020","la-stoppa-ageno","saint-romble-sancerre-2020","veuve-clicquot-yellow-label","bedeau-cossard","bigotes-cossard","cakebread-chardonnay-2021","chateau-cantemerle-2017","domaine-mia-clos-la-marche-2020","gd-vajra-albe-2021","la-stoppa-macchiona-2012","picchioni-buttafuoco-bricco-riva-bianca-2018","shafer-one-point-five-2019","tenuta-buon-tempo-brunello-2015","michel-gros-hcdn-au-vallon-2022","michel-gros-nsg-les-chaliots-2020","pataille-marsannay-2019","schueller-gewurztraminer-bild-2022","schueller-pinot-gris-reserve-2022","werlitsch-ex-vero-iii-2018","chateau-la-lagune-2015","kongsgaard-chardonnay-2021","kongsgaard-chardonnay-2023","marc-delienne-maurice-2018","michel-gros-fontaine-saint-martin-blanc-2022","chateau-montus-2018","saint-cosme-cote-rotie-2020","sociando-mallet-jean-gautreau-2014","chateau-belgrave-2015","chateau-pontet-canet-2019","chateau-montrose-2011","chateau-branaire-ducru-2019","ferraton-cote-rotie-eglantine-2018","chateau-haut-batailley-2019","chateau-talbot-2018","chateau-talbot-2021","chateau-talbot-2017"];
 const REVIEW_HINTS = {
-  'marc-delienne-maurice-2018': '다 마셨다고 하신 와인이에요 → 0병으로 저장하거나 삭제',
+  'marc-delienne-maurice-2018': '다 마셨다고 하신 와인이에요 → 마신 병마다 "🍷 마셨어요"로 시음 기록 남기기',
   'veuve-clicquot-yellow-label': '직접 입력한 "Veuve Clicquot Yellow Label Brut NV" 기록이 따로 있어요 → 같은 와인이면 삭제',
   'michel-gros-fontaine-saint-martin-blanc-2022': '직접 입력한 Fontaine Saint Martin Blanc 2병 기록(2단·외부)이 따로 있어요 → 같은 와인이면 삭제'
 };
@@ -3840,14 +3847,17 @@ function renderReview(){
       <div class="rv-ctrl">
         <button class="rv-btn primary" onclick="reviewSave('${id}')">💾 저장</button>
         <button class="rv-btn" onclick="reviewKeep('${id}')">✓ 지금 기록이 맞아요</button>
-        <button class="rv-btn danger" onclick="reviewDelete('${id}')">🗑 삭제(중복)</button>
+      </div>
+      <div class="rv-ctrl">
+        <button class="rv-btn drank" onclick="reviewDrank('${id}')" ${qty(w)>0?'':'disabled'}>🍷 마셨어요 (시음 기록 남기기)</button>
+        <button class="rv-btn danger" onclick="reviewDelete('${id}')">🗑 중복이면 삭제</button>
       </div>
       ${done ? '<div class="rv-done">✓ 확인 완료</div>' : ''}
     </div>`;
   }).join('');
   panel.innerHTML = `
     <h3>🍷 정리 도우미</h3>
-    <div class="rv-desc">10월 10일 사고로 처음 넣었던 상태로 돌아간 와인 ${total}종이에요. 셀러를 보면서 <b>실제 병수와 위치</b>로 고친 뒤 저장해주세요. 맞으면 "지금 기록이 맞아요", 다른 기록과 겹치면 "삭제"를 누르면 돼요. 누른 즉시 저장되고, 중간에 그만둬도 괜찮아요.</div>
+    <div class="rv-desc">10월 10일 사고로 처음 넣었던 상태로 돌아간 와인 ${total}종이에요. 셀러를 보면서 <b>실제 병수와 위치</b>로 고친 뒤 저장해주세요. 맞으면 "지금 기록이 맞아요", <b>이미 마신 병은 "🍷 마셨어요"</b>로 시음 기록을 남기면 병수가 1병씩 줄어요. 다른 기록과 완전히 겹칠 때만 삭제하세요. 누른 즉시 저장되고, 중간에 그만둬도 괜찮아요.</div>
     <div class="rv-prog">진행 ${doneCount} / ${total}종 확인</div>
     <div class="rv-filter">
       <button class="rv-btn${reviewFilter==='todo'?' on':''}" onclick="reviewFilter='todo';renderReview()">남은 것만</button>
@@ -3880,6 +3890,13 @@ async function reviewSave(id){
     renderReview(); render();
     showToast(`저장했어요 · ${q}병 · ${locationLabel(loc)}`);
   }catch(e){ console.error('review save error', e); showToast('저장하지 못했어요. 연결을 확인하고 다시 눌러주세요.'); }
+}
+function reviewDrank(id){
+  // 앱의 기존 "시음 기록하기" 화면을 그대로 열어줌. 저장하면 시음 기록이 남고 병수가 1병 줄어듦.
+  // 여러 병을 마셨다면 마신 횟수만큼 반복 (시음 날짜도 실제 날짜로 적을 수 있음)
+  const w = wines.find(x=>x.id===id);
+  if(!w || qty(w)<=0){ showToast('남은 병이 없어요'); return; }
+  openTasteLog(id, (w.location && w.location!=='multi') ? w.location : '');
 }
 async function reviewKeep(id){
   try{ await markReviewed(id); renderReview(); showToast('확인 완료로 표시했어요'); }
