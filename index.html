@@ -3743,6 +3743,7 @@ async function init(){
   document.getElementById('loadingMsg').style.display='none';
   updateSortBarVisibility();
   render();
+  try{ maybeStartReview(); }catch(e){ console.error('review start failed', e); }
 }
 let __initCalled = false;
 function __initOnce(){ if(__initCalled) return; __initCalled = true; init(); }
@@ -3761,6 +3762,143 @@ setTimeout(()=>{
     try{ render(); }catch(e){ console.error('watchdog render failed', e); }
   }
 }, 10000);
+</script>
+
+<!-- ===== 정리 도우미: 2026-10-10 시드 덮어쓰기 사고로 옛 상태가 된 40종을 사용자가 직접 확인·수정 =====
+     주소 끝에 ?정리 (또는 ?review) 를 붙여 열 때만 나타남. 켤 때 자동 저장은 절대 하지 않음.
+     저장은 사용자가 각 줄의 버튼을 누를 때만, 앱의 기존 저장 경로(persistWine)로 함. -->
+<style>
+  #reviewPanel{margin:12px 0 18px;padding:14px;border-radius:14px;background:rgba(201,162,75,0.08);border:1px solid rgba(201,162,75,0.45);color:var(--cream);}
+  #reviewPanel h3{margin:0 0 6px;font-size:17px;color:var(--gold-soft);}
+  #reviewPanel .rv-desc{font-size:13px;line-height:1.6;color:rgba(243,233,216,0.8);margin-bottom:10px;}
+  #reviewPanel .rv-prog{font-size:13px;margin-bottom:10px;color:var(--gold-soft);}
+  #reviewPanel .rv-filter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;}
+  #reviewPanel .rv-row{background:var(--parchment);color:var(--ink);border-radius:12px;padding:12px;margin-bottom:8px;}
+  #reviewPanel .rv-row.done{opacity:0.55;}
+  #reviewPanel .rv-name{font-weight:600;font-size:14.5px;line-height:1.35;}
+  #reviewPanel .rv-sub{font-size:12px;color:var(--ink-dim);margin-top:2px;}
+  #reviewPanel .rv-hint{display:inline-block;margin-top:6px;font-size:12px;padding:3px 8px;border-radius:8px;background:#f6dfb0;color:#6b4a10;}
+  #reviewPanel .rv-ctrl{display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap;}
+  #reviewPanel .rv-ctrl input{width:58px;padding:7px;border-radius:8px;border:1px solid #cbb994;font-size:15px;text-align:center;background:#fff;color:var(--ink);}
+  #reviewPanel .rv-ctrl select{flex:1;min-width:110px;padding:7px;border-radius:8px;border:1px solid #cbb994;font-size:14px;background:#fff;color:var(--ink);}
+  #reviewPanel .rv-btn{border:1px solid #b8964a;background:#fff8e8;color:#5a3e10;border-radius:999px;padding:7px 12px;font-size:13px;font-weight:600;cursor:pointer;}
+  #reviewPanel .rv-btn.primary{background:#7a2434;border-color:#7a2434;color:#fff;}
+  #reviewPanel .rv-btn.danger{background:#fff;border-color:#c0504d;color:#a32d2d;}
+  #reviewPanel .rv-btn.on{background:var(--gold);border-color:var(--gold);color:#2a1810;}
+  #reviewPanel .rv-done{font-size:12.5px;color:#3b6d11;margin-top:8px;font-weight:600;}
+</style>
+<script>
+const REVIEW_IDS = ["bgb-aligote-2022","bollinger-special-cuvee","couturier-macon-loche-2018","jean-foillard-morgon-cote-du-py-2020","la-stoppa-ageno","saint-romble-sancerre-2020","veuve-clicquot-yellow-label","bedeau-cossard","bigotes-cossard","cakebread-chardonnay-2021","chateau-cantemerle-2017","domaine-mia-clos-la-marche-2020","gd-vajra-albe-2021","la-stoppa-macchiona-2012","picchioni-buttafuoco-bricco-riva-bianca-2018","shafer-one-point-five-2019","tenuta-buon-tempo-brunello-2015","michel-gros-hcdn-au-vallon-2022","michel-gros-nsg-les-chaliots-2020","pataille-marsannay-2019","schueller-gewurztraminer-bild-2022","schueller-pinot-gris-reserve-2022","werlitsch-ex-vero-iii-2018","chateau-la-lagune-2015","kongsgaard-chardonnay-2021","kongsgaard-chardonnay-2023","marc-delienne-maurice-2018","michel-gros-fontaine-saint-martin-blanc-2022","chateau-montus-2018","saint-cosme-cote-rotie-2020","sociando-mallet-jean-gautreau-2014","chateau-belgrave-2015","chateau-pontet-canet-2019","chateau-montrose-2011","chateau-branaire-ducru-2019","ferraton-cote-rotie-eglantine-2018","chateau-haut-batailley-2019","chateau-talbot-2018","chateau-talbot-2021","chateau-talbot-2017"];
+const REVIEW_HINTS = {
+  'marc-delienne-maurice-2018': '다 마셨다고 하신 와인이에요 → 0병으로 저장하거나 삭제',
+  'veuve-clicquot-yellow-label': '직접 입력한 "Veuve Clicquot Yellow Label Brut NV" 기록이 따로 있어요 → 같은 와인이면 삭제',
+  'michel-gros-fontaine-saint-martin-blanc-2022': '직접 입력한 Fontaine Saint Martin Blanc 2병 기록(2단·외부)이 따로 있어요 → 같은 와인이면 삭제'
+};
+const REVIEW_DONE_KEY = 'review:reseed40';
+let reviewDone = new Set();
+let reviewFilter = 'todo';
+const REVIEW_LOCS = ['외부','1','2','3','4','5','6','7','8','9'];
+
+function reviewRequested(){
+  try{ const q = decodeURIComponent(location.search + location.hash); return q.includes('정리') || q.toLowerCase().includes('review'); }
+  catch(e){ return false; }
+}
+async function maybeStartReview(){
+  if(!reviewRequested()) return;
+  if(dataNoticeState.partial){ showToast('목록을 일부만 불러왔어요. 새로고침 후 정리해주세요.'); return; } // 불완전한 데이터 위에서는 정리 시작 안 함
+  try{ const r = await sGet(REVIEW_DONE_KEY, false); if(r && r.value) reviewDone = new Set(JSON.parse(r.value)); }catch(e){ /* 아직 확인한 것 없음 */ }
+  const wrap = document.querySelector('.wrap');
+  let panel = document.getElementById('reviewPanel');
+  if(!panel){ panel = document.createElement('div'); panel.id = 'reviewPanel'; wrap.insertBefore(panel, document.getElementById('listSummary')); }
+  renderReview();
+  panel.scrollIntoView({behavior:'smooth', block:'start'});
+}
+async function markReviewed(id){
+  reviewDone.add(id);
+  await sSet(REVIEW_DONE_KEY, JSON.stringify(Array.from(reviewDone)), false);
+}
+function renderReview(){
+  const panel = document.getElementById('reviewPanel');
+  if(!panel) return;
+  const items = REVIEW_IDS.map(id=>({ id, w: wines.find(x=>x.id===id) }));
+  const total = items.length;
+  const doneCount = items.filter(it=>!it.w || reviewDone.has(it.id)).length;
+  const shown = items.filter(it=> reviewFilter==='all' ? true : (it.w && !reviewDone.has(it.id)));
+  const locOpts = (cur)=> REVIEW_LOCS.map(l=>`<option value="${l}"${String(cur)===l?' selected':''}>${locationLabel(l)}</option>`).join('');
+  const rows = shown.map(({id, w})=>{
+    if(!w) return `<div class="rv-row done"><div class="rv-name">${escapeHtml(id)}</div><div class="rv-done">✓ 삭제됨</div></div>`;
+    const done = reviewDone.has(id);
+    const curLoc = (w.location && w.location!=='multi') ? w.location : '외부';
+    return `<div class="rv-row${done?' done':''}" id="rv-${id}">
+      <div class="rv-name">${escapeHtml(w.name)||'(이름 없음)'} · ${escapeHtml(w.vintage)||'—'}</div>
+      <div class="rv-sub">${escapeHtml(shrinkParensPlain(w.winery))} · 지금 기록: ${qty(w)}병 · ${locationLabel(curLoc)}</div>
+      ${REVIEW_HINTS[id] ? `<div class="rv-hint">💡 ${REVIEW_HINTS[id]}</div>` : ''}
+      <div class="rv-ctrl">
+        <input type="number" min="0" step="1" inputmode="numeric" value="${qty(w)}" id="rvq-${id}" aria-label="남은 병수"><span style="font-size:13px">병</span>
+        <select id="rvl-${id}" aria-label="보관 위치">${locOpts(curLoc)}</select>
+      </div>
+      <div class="rv-ctrl">
+        <button class="rv-btn primary" onclick="reviewSave('${id}')">💾 저장</button>
+        <button class="rv-btn" onclick="reviewKeep('${id}')">✓ 지금 기록이 맞아요</button>
+        <button class="rv-btn danger" onclick="reviewDelete('${id}')">🗑 삭제(중복)</button>
+      </div>
+      ${done ? '<div class="rv-done">✓ 확인 완료</div>' : ''}
+    </div>`;
+  }).join('');
+  panel.innerHTML = `
+    <h3>🍷 정리 도우미</h3>
+    <div class="rv-desc">10월 10일 사고로 처음 넣었던 상태로 돌아간 와인 ${total}종이에요. 셀러를 보면서 <b>실제 병수와 위치</b>로 고친 뒤 저장해주세요. 맞으면 "지금 기록이 맞아요", 다른 기록과 겹치면 "삭제"를 누르면 돼요. 누른 즉시 저장되고, 중간에 그만둬도 괜찮아요.</div>
+    <div class="rv-prog">진행 ${doneCount} / ${total}종 확인</div>
+    <div class="rv-filter">
+      <button class="rv-btn${reviewFilter==='todo'?' on':''}" onclick="reviewFilter='todo';renderReview()">남은 것만</button>
+      <button class="rv-btn${reviewFilter==='all'?' on':''}" onclick="reviewFilter='all';renderReview()">전체 ${total}종</button>
+      <button class="rv-btn" onclick="closeReview()">닫기</button>
+    </div>
+    ${rows || '<div class="rv-desc" style="font-size:15px;color:var(--gold-soft)">🎉 40종 모두 확인했어요! 정리가 끝났어요. ⬇ 백업도 한 번 받아두세요.</div>'}`;
+}
+function shrinkParensPlain(s){ return (s||'').replace(/\s*\([^)]*\)\s*/g,' ').trim(); }
+function closeReview(){
+  const p = document.getElementById('reviewPanel'); if(p) p.remove();
+  try{ history.replaceState(null, '', location.pathname); }catch(e){}
+}
+async function reviewFreshWine(id){
+  // 저장 직전 서버의 최신 기록을 다시 읽어, 다른 기기에서 바뀐 내용(시음 기록 등)을 덮어쓰지 않도록 함
+  memStore.delete('wine:'+id);
+  const r = await sGet('wine:'+id, false);
+  const w = JSON.parse(r.value);
+  if(!Array.isArray(w.tastings)) w.tastings = [];
+  return w;
+}
+async function reviewSave(id){
+  const q = Math.max(0, Math.round(Number(document.getElementById('rvq-'+id).value)||0));
+  const loc = document.getElementById('rvl-'+id).value;
+  try{
+    const w = await reviewFreshWine(id);
+    const updated = Object.assign({}, w, { quantity: q, location: loc, locations: null });
+    await persistWine(updated);
+    await markReviewed(id);
+    renderReview(); render();
+    showToast(`저장했어요 · ${q}병 · ${locationLabel(loc)}`);
+  }catch(e){ console.error('review save error', e); showToast('저장하지 못했어요. 연결을 확인하고 다시 눌러주세요.'); }
+}
+async function reviewKeep(id){
+  try{ await markReviewed(id); renderReview(); showToast('확인 완료로 표시했어요'); }
+  catch(e){ showToast('저장하지 못했어요. 다시 눌러주세요.'); }
+}
+function reviewDelete(id){
+  const w = wines.find(x=>x.id===id);
+  showConfirm(`"${w ? w.name : id}" 기록을 삭제할까요?\n(다른 곳에 직접 입력한 같은 와인 기록이 있을 때만 삭제해주세요)`, async ()=>{
+    try{
+      await sDelete('wine:'+id, false);
+      await removeFromIndex('wine', id);
+      try{ await sDelete('purchase:wine-'+id, false); await removeFromIndex('purchase', 'wine-'+id); purchases = purchases.filter(x=>x.id!==('wine-'+id)); }catch(e){}
+      wines = wines.filter(x=>x.id!==id);
+      await markReviewed(id);
+      renderReview(); render();
+      showToast('삭제했어요');
+    }catch(e){ console.error('review delete error', e); showToast('삭제하지 못했어요. 다시 눌러주세요.'); }
+  });
+}
 </script>
 </body>
 </html>
