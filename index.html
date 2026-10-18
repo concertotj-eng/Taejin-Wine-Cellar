@@ -3588,6 +3588,7 @@ async function saveTasteLog(){
   // 보유 와인 탭에 그대로 머물러, 방금 줄어든 수량을 바로 확인할 수 있도록 함
   render();
   if(typeof renderReview==='function' && document.getElementById('reviewPanel')){
+    if(typeof reviewLocRows!=='undefined') delete reviewLocRows[updated.id];
     renderReview();
     const row = document.getElementById('rv-'+updated.id);
     if(row) row.scrollIntoView({behavior:'smooth', block:'center'});
@@ -3791,6 +3792,10 @@ setTimeout(()=>{
   #reviewPanel .rv-btn.danger{background:#fff;border-color:#c0504d;color:#a32d2d;}
   #reviewPanel .rv-btn.drank{background:#f3e3e6;border-color:#7a2434;color:#7a2434;}
   #reviewPanel .rv-btn[disabled]{opacity:0.4;}
+  #reviewPanel .rv-loclabel{font-size:12px;color:var(--ink-dim);margin-top:10px;}
+  #reviewPanel .rv-locrow{margin-top:6px;}
+  #reviewPanel .rv-x{padding:6px 10px;}
+  #reviewPanel .rv-add{margin-top:6px;font-size:12.5px;padding:5px 10px;background:transparent;}
   #reviewPanel .rv-btn.on{background:var(--gold);border-color:var(--gold);color:#2a1810;}
   #reviewPanel .rv-done{font-size:12.5px;color:#3b6d11;margin-top:8px;font-weight:600;}
 </style>
@@ -3838,18 +3843,25 @@ function renderReview(){
     const curLoc = (w.location && w.location!=='multi') ? w.location : '외부';
     return `<div class="rv-row${done?' done':''}" id="rv-${id}">
       <div class="rv-name">${escapeHtml(w.name)||'(이름 없음)'} · ${escapeHtml(w.vintage)||'—'}</div>
-      <div class="rv-sub">${escapeHtml(shrinkParensPlain(w.winery))} · 지금 기록: ${qty(w)}병 · ${locationLabel(curLoc)}</div>
+      <div class="rv-sub">${escapeHtml(shrinkParensPlain(w.winery))} · 지금 기록: ${qty(w)}병 · ${locationBreakdownText(w) || locationLabel(curLoc)}</div>
       ${REVIEW_HINTS[id] ? `<div class="rv-hint">💡 ${REVIEW_HINTS[id]}</div>` : ''}
-      <div class="rv-ctrl">
-        <input type="number" min="0" step="1" inputmode="numeric" value="${qty(w)}" id="rvq-${id}" aria-label="남은 병수"><span style="font-size:13px">병</span>
-        <select id="rvl-${id}" aria-label="보관 위치">${locOpts(curLoc)}</select>
-      </div>
+      <div class="rv-loclabel">보관 위치별 병수</div>
+      ${reviewRowsFor(id, w).map((r, i)=>`
+      <div class="rv-ctrl rv-locrow">
+        <select aria-label="보관 위치" onchange="reviewSetRow('${id}',${i},'loc',this.value)">${locOpts(r.loc)}</select>
+        <input type="number" min="0" step="1" inputmode="numeric" value="${r.qty}" aria-label="병수" oninput="reviewSetRow('${id}',${i},'qty',this.value)"><span style="font-size:13px">병</span>
+        ${reviewRowsFor(id, w).length>1 ? `<button class="rv-btn rv-x" onclick="reviewRemoveRow('${id}',${i})" aria-label="이 위치 지우기">✕</button>` : ''}
+      </div>`).join('')}
+      <button class="rv-btn rv-add" onclick="reviewAddRow('${id}')">＋ 다른 위치 추가</button>
       <div class="rv-ctrl">
         <button class="rv-btn primary" onclick="reviewSave('${id}')">💾 저장</button>
         <button class="rv-btn" onclick="reviewKeep('${id}')">✓ 지금 기록이 맞아요</button>
       </div>
       <div class="rv-ctrl">
-        <button class="rv-btn drank" onclick="reviewDrank('${id}')" ${qty(w)>0?'':'disabled'}>🍷 마셨어요 (시음 기록 남기기)</button>
+        ${(()=>{ const ls = getWineLocations(w).filter(r=>(parseInt(r.qty)||0)>0);
+          if(ls.length===0) return `<button class="rv-btn drank" disabled>🍷 마셨어요 (남은 병 없음)</button>`;
+          if(ls.length===1) return `<button class="rv-btn drank" onclick="reviewDrank('${id}','${ls[0].loc}')">🍷 마셨어요 (시음 기록 남기기)</button>`;
+          return ls.map(r=>`<button class="rv-btn drank" onclick="reviewDrank('${id}','${r.loc}')">🍷 ${locationLabel(r.loc)}에서 마심</button>`).join(''); })()}
         <button class="rv-btn danger" onclick="reviewDelete('${id}')">🗑 중복이면 삭제</button>
       </div>
       ${done ? '<div class="rv-done">✓ 확인 완료</div>' : ''}
@@ -3857,7 +3869,7 @@ function renderReview(){
   }).join('');
   panel.innerHTML = `
     <h3>🍷 정리 도우미</h3>
-    <div class="rv-desc">10월 10일 사고로 처음 넣었던 상태로 돌아간 와인 ${total}종이에요. 셀러를 보면서 <b>실제 병수와 위치</b>로 고친 뒤 저장해주세요. 맞으면 "지금 기록이 맞아요", <b>이미 마신 병은 "🍷 마셨어요"</b>로 시음 기록을 남기면 병수가 1병씩 줄어요. 다른 기록과 완전히 겹칠 때만 삭제하세요. 누른 즉시 저장되고, 중간에 그만둬도 괜찮아요.</div>
+    <div class="rv-desc">10월 10일 사고로 처음 넣었던 상태로 돌아간 와인 ${total}종이에요. 셀러를 보면서 <b>실제 병수와 위치</b>로 고친 뒤 저장해주세요. 여러 병이 다른 곳에 있으면 "＋ 다른 위치 추가"로 위치마다 따로 적어주세요. 맞으면 "지금 기록이 맞아요", <b>이미 마신 병은 "🍷 마셨어요"</b>로 시음 기록을 남기면 병수가 1병씩 줄어요. 다른 기록과 완전히 겹칠 때만 삭제하세요. 누른 즉시 저장되고, 중간에 그만둬도 괜찮아요.</div>
     <div class="rv-prog">진행 ${doneCount} / ${total}종 확인</div>
     <div class="rv-filter">
       <button class="rv-btn${reviewFilter==='todo'?' on':''}" onclick="reviewFilter='todo';renderReview()">남은 것만</button>
@@ -3879,24 +3891,59 @@ async function reviewFreshWine(id){
   if(!Array.isArray(w.tastings)) w.tastings = [];
   return w;
 }
+// 와인별로 화면에서 편집 중인 "위치별 병수" 줄 (저장 전까지는 화면에만 있음)
+const reviewLocRows = {};
+function reviewRowsFor(id, w){
+  if(!reviewLocRows[id]){
+    const ls = getWineLocations(w).map(r=>({ loc: String(r.loc||'외부')==='multi' ? '외부' : String(r.loc||'외부'), qty: parseInt(r.qty)||0 }));
+    reviewLocRows[id] = ls.length ? ls : [{ loc: (w.location && w.location!=='multi') ? w.location : '외부', qty: 0 }];
+  }
+  return reviewLocRows[id];
+}
+function reviewSetRow(id, i, field, val){
+  const rows = reviewLocRows[id]; if(!rows || !rows[i]) return;
+  rows[i][field] = field==='qty' ? Math.max(0, Math.round(Number(val)||0)) : val;
+}
+function reviewAddRow(id){
+  const w = wines.find(x=>x.id===id); if(!w) return;
+  const rows = reviewRowsFor(id, w);
+  const used = new Set(rows.map(r=>r.loc));
+  const next = REVIEW_LOCS.find(l=>!used.has(l)) || '외부';
+  rows.push({ loc: next, qty: 1 });
+  renderReview();
+}
+function reviewRemoveRow(id, i){
+  const rows = reviewLocRows[id]; if(!rows || rows.length<=1) return;
+  rows.splice(i, 1);
+  renderReview();
+}
 async function reviewSave(id){
-  const q = Math.max(0, Math.round(Number(document.getElementById('rvq-'+id).value)||0));
-  const loc = document.getElementById('rvl-'+id).value;
+  const w0 = wines.find(x=>x.id===id); if(!w0) return;
+  // 같은 위치를 두 줄에 적었으면 합치고, 0병인 줄은 버림
+  const merged = new Map();
+  reviewRowsFor(id, w0).forEach(r=>{ merged.set(r.loc, (merged.get(r.loc)||0) + (parseInt(r.qty)||0)); });
+  const rows = Array.from(merged, ([loc, qty])=>({ loc, qty })).filter(r=>r.qty>0);
+  const total = rows.reduce((s,r)=>s+r.qty, 0);
   try{
     const w = await reviewFreshWine(id);
-    const updated = Object.assign({}, w, { quantity: q, location: loc, locations: null });
+    let patch;
+    if(rows.length>1)       patch = { quantity: total, location: 'multi', locations: rows };
+    else if(rows.length===1) patch = { quantity: total, location: rows[0].loc, locations: null };
+    else                     patch = { quantity: 0, location: (reviewLocRows[id][0]||{}).loc || '외부', locations: null };
+    const updated = Object.assign({}, w, patch);
     await persistWine(updated);
     await markReviewed(id);
+    delete reviewLocRows[id];
     renderReview(); render();
-    showToast(`저장했어요 · ${q}병 · ${locationLabel(loc)}`);
+    showToast(`저장했어요 · ${total}병` + (rows.length ? ' · ' + rows.map(r=>`${locationLabel(r.loc)} ${r.qty}병`).join(', ') : ''));
   }catch(e){ console.error('review save error', e); showToast('저장하지 못했어요. 연결을 확인하고 다시 눌러주세요.'); }
 }
-function reviewDrank(id){
+function reviewDrank(id, loc){
   // 앱의 기존 "시음 기록하기" 화면을 그대로 열어줌. 저장하면 시음 기록이 남고 병수가 1병 줄어듦.
   // 여러 병을 마셨다면 마신 횟수만큼 반복 (시음 날짜도 실제 날짜로 적을 수 있음)
   const w = wines.find(x=>x.id===id);
   if(!w || qty(w)<=0){ showToast('남은 병이 없어요'); return; }
-  openTasteLog(id, (w.location && w.location!=='multi') ? w.location : '');
+  openTasteLog(id, loc || ((w.location && w.location!=='multi') ? w.location : ''));
 }
 async function reviewKeep(id){
   try{ await markReviewed(id); renderReview(); showToast('확인 완료로 표시했어요'); }
