@@ -2251,7 +2251,8 @@ async function getIndexFresh(prefix){
   return getIndex(prefix);
 }
 async function addToIndex(prefix, id){
-  if(indexCache[prefix] && indexCache[prefix].has(id)) return; // 이미 인덱스에 있는 걸 아니까 네트워크 확인 생략
+  // 캐시만 믿고 건너뛰면, 다른 화면·기기에서 삭제된 뒤 이 화면에서 다시 저장한 항목이 목차에서 빠짐.
+  // 그래서 저장할 때마다 서버의 최신 목차를 확인함 (읽기 1번 추가, 데이터 안전이 우선).
   return runIndexOp(prefix, async ()=>{
     try{
       const idx = await getIndexFresh(prefix);
@@ -3951,11 +3952,11 @@ async function reviewKeep(id){
 }
 function reviewDelete(id){
   const w = wines.find(x=>x.id===id);
-  showConfirm(`"${w ? w.name : id}" 기록을 삭제할까요?\n(다른 곳에 직접 입력한 같은 와인 기록이 있을 때만 삭제해주세요)`, async ()=>{
+  showConfirm(`"${w ? w.name : id}" 기록을 삭제할까요?\n(같은 와인이 두 번 입력된 경우에만 삭제해주세요. 마신 와인은 "🍷 마셨어요"를 눌러주세요. 구매내역은 지우지 않아요)`, async ()=>{
     try{
       await sDelete('wine:'+id, false);
       await removeFromIndex('wine', id);
-      try{ await sDelete('purchase:wine-'+id, false); await removeFromIndex('purchase', 'wine-'+id); purchases = purchases.filter(x=>x.id!==('wine-'+id)); }catch(e){}
+      // 구매내역은 실제로 산 기록이므로 지우지 않음
       wines = wines.filter(x=>x.id!==id);
       await markReviewed(id);
       renderReview(); render();
