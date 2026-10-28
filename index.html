@@ -253,6 +253,13 @@
   }
   .mini-btn.secondary{background:transparent;color:var(--wine-700);border:1px solid var(--wine-700);}
   .mini-btn:disabled{opacity:0.4;cursor:not-allowed;}
+  /* 시음 기록 시 마신 병의 위치 선택 */
+  .loc-pick-title{margin-top:10px;font-weight:700;font-size:13px;}
+  .loc-pick-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+  .loc-pick{background:transparent;color:var(--wine-700);border:1px solid var(--wine-700);border-radius:999px;
+    padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;}
+  .loc-pick.on{background:var(--wine-700);color:var(--cream);}
+  .loc-pick-hint{margin-top:6px;font-size:12px;color:#a84a2a;}
   .taste-count{
     font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--gold);opacity:0.9;
     background:rgba(90,28,43,0.9);color:var(--gold-soft);border-radius:999px;padding:2px 8px;display:inline-block;margin-top:6px;
@@ -3121,6 +3128,7 @@ function render(){
           <div class="card-extra">
             ${t.score ? `<span>평점 <b>${escapeHtml(t.score)}/5</b></span>` : ''}
             <span>잔여 <b>${remain}병</b></span>
+            ${t.location ? `<span>📍 ${escapeHtml(locationLabel(t.location))}</span>` : ''}
           </div>
           ${t.review ? `<div class="card-meta" style="border-top:none;padding-top:4px;">"${escapeHtml(truncate(t.review,40))}"</div>` : ''}
           ${w.tastingmemo ? `<div class="card-memo">📝 ${escapeHtml(truncate(w.tastingmemo,50))}</div>` : ''}
@@ -3134,7 +3142,7 @@ function render(){
           <span class="row-dot" style="background:${colorMap[w.color]||colorMap.red}"></span>
           <div class="row-main">
             <div class="row-title">${escapeHtml(w.name)||'(이름 없음)'} · ${escapeHtml(w.vintage)||'—'}${w.tastingmemo?' 📝':''}</div>
-            <div class="row-sub">${shrinkParens(w.winery)||''}${t.tastedate?' · '+escapeHtml(t.tastedate):''}</div>
+            <div class="row-sub">${shrinkParens(w.winery)||''}${t.tastedate?' · '+escapeHtml(t.tastedate):''}${t.location?' · 📍'+escapeHtml(locationLabel(t.location)):''}</div>
           </div>
           <div class="row-meta">
             <div>${t.score ? '⭐ '+escapeHtml(t.score)+'/5' : ''}</div>
@@ -3268,7 +3276,7 @@ function openWineView(id){
     tastingsHtml = `<div class="view-section"><div class="view-legend">시음 기록 (${tastings.length}회)</div>` +
       tastings.map(t => `
         <div class="view-taste-card" onclick="event.stopPropagation();openTasteView('${w.id}','${t.id}')">
-          <div class="view-taste-top"><span>${escapeHtml(t.tastedate)||'날짜 미기록'}</span>${t.score?`<span class="view-taste-score">${escapeHtml(t.score)}/5</span>`:''}</div>
+          <div class="view-taste-top"><span>${escapeHtml(t.tastedate)||'날짜 미기록'}${t.location?' · 📍'+escapeHtml(locationLabel(t.location)):''}</span>${t.score?`<span class="view-taste-score">${escapeHtml(t.score)}/5</span>`:''}</div>
           ${t.review ? `<div class="view-taste-review">"${escapeHtml(truncate(t.review,60))}"</div>` : ''}
         </div>
       `).join('') + `</div>`;
@@ -3287,7 +3295,7 @@ function openTasteView(wineId, tastingId){
   if(!t) return;
 
   document.getElementById('viewTitle').textContent = (w.vintage ? w.vintage+' · ' : '') + (w.name || '(이름 없음)');
-  document.getElementById('viewSubtitle').innerHTML = shrinkParens(w.winery||'') + (t.tastedate ? ' · ' + escapeHtml(t.tastedate) : '');
+  document.getElementById('viewSubtitle').innerHTML = shrinkParens(w.winery||'') + (t.tastedate ? ' · ' + escapeHtml(t.tastedate) : '') + (t.location ? ' · 📍 ' + escapeHtml(locationLabel(t.location)) : '');
 
   const overview = vSection('총평 & 페어링', [
     vItem('개인 점수', t.score ? t.score+'/5' : ''),
@@ -3411,7 +3419,36 @@ function openNewTasteForm(){
   if(dEl) dEl.value = new Date().toISOString().slice(0,10);
 }
 
-let tasteLogFromLocation = null;
+let tasteLogFromLocation = null; // 시음 기록 시 실제로 차감할 위치 (사용자가 고르거나, 위치 뷰에서 넘어온 값)
+function renderTasteLocBanner(w){
+  const locs = getWineLocations(w).filter(r=>(parseInt(r.qty)||0)>0);
+  const banner = document.getElementById('tasteBanner');
+  if(locs.length<=1){
+    // 한 곳에만 있으면 고를 필요 없음 — 그 위치로 기록
+    tasteLogFromLocation = locs.length===1 ? locs[0].loc : (w.location && w.location!=='multi' ? w.location : null);
+    const where = tasteLogFromLocation ? ` (${locationLabel(tasteLogFromLocation)})` : '';
+    banner.innerHTML = `현재 <b>${qty(w)}병</b> 보유 중입니다${where}. 이 시음을 기록하면 보유 수량이 <b>1병</b> 줄어듭니다.`;
+    return;
+  }
+  // 여러 위치에 나눠 보관 중 → 어느 위치의 병을 마셨는지 반드시 선택
+  if(tasteLogFromLocation && !locs.some(r=>r.loc===tasteLogFromLocation)) tasteLogFromLocation = null;
+  const chips = locs.map(r=>{
+    const on = r.loc===tasteLogFromLocation;
+    return `<button type="button" class="loc-pick${on?' on':''}" onclick="pickTasteLoc('${String(r.loc).replace(/'/g,"\\'")}')">📍 ${escapeHtml(locationLabel(r.loc))} · ${r.qty}병</button>`;
+  }).join('');
+  const after = tasteLogFromLocation
+    ? `${locationLabel(tasteLogFromLocation)}에서 <b>1병</b>이 줄어듭니다.`
+    : `<div class="loc-pick-hint">마신 병의 위치를 선택해 주세요.</div>`;
+  banner.innerHTML = `현재 <b>${qty(w)}병</b> 보유 중입니다 (${escapeHtml(locationBreakdownText(w))}).
+    <div class="loc-pick-title">어느 위치의 병을 마셨나요?</div>
+    <div class="loc-pick-wrap">${chips}</div>
+    <div style="margin-top:6px;">${after}</div>`;
+}
+function pickTasteLoc(loc){
+  tasteLogFromLocation = loc;
+  const w = wines.find(x=>x.id===editingWineId);
+  if(w) renderTasteLocBanner(w);
+}
 function openTasteLog(wineId, fromLocation){
   const w = wines.find(x=>x.id===wineId);
   if(!w) return;
@@ -3426,9 +3463,7 @@ function openTasteLog(wineId, fromLocation){
   document.getElementById('wineContextName').textContent = (w.vintage?w.vintage+' · ':'') + (w.name||'');
   document.getElementById('wineContextSub').textContent = w.winery||'';
   document.getElementById('tasteBanner').classList.remove('hidden');
-  const isMultiLoc = Array.isArray(w.locations) && w.locations.length>1;
-  const locNote = (isMultiLoc && tasteLogFromLocation) ? ` (${locationLabel(tasteLogFromLocation)} 기준)` : '';
-  document.getElementById('tasteBanner').innerHTML = `현재 <b>${qty(w)}병</b> 보유 중입니다${locNote}. 이 시음을 기록하면 보유 수량이 <b>1병</b> 줄어듭니다.`;
+  renderTasteLocBanner(w);
   document.getElementById('deleteBtn').classList.add('hidden');
   document.getElementById('panelTitle').textContent = '시음 기록 남기기';
   const dEl = document.getElementById('f_tastedate');
@@ -3450,7 +3485,8 @@ function openEditTaste(wineId, tastingId){
   document.getElementById('wineContextName').textContent = (w.vintage?w.vintage+' · ':'') + (w.name||'');
   document.getElementById('wineContextSub').textContent = w.winery||'';
   document.getElementById('tasteBanner').classList.remove('hidden');
-  document.getElementById('tasteBanner').innerHTML = `현재 <b>${qty(w)}병</b> 보유 중입니다. 이 시음 기록을 삭제하면 보유 수량이 <b>1병</b> 복원됩니다.`;
+  const tLocText = t.location ? `<b>${escapeHtml(locationLabel(t.location))}</b>에` : '보유 수량에';
+  document.getElementById('tasteBanner').innerHTML = `현재 <b>${qty(w)}병</b> 보유 중입니다.${t.location?` 이 병은 <b>📍 ${escapeHtml(locationLabel(t.location))}</b>에서 꺼낸 병입니다.`:''} 이 시음 기록을 삭제하면 ${tLocText} <b>1병</b> 복원됩니다.`;
   document.getElementById('deleteBtn').classList.remove('hidden');
   document.getElementById('deleteBtn').textContent = '이 시음 기록 삭제';
   document.getElementById('panelTitle').textContent = '시음 기록 수정';
@@ -3577,16 +3613,23 @@ async function saveTasteLog(){
     tasting[f] = el ? el.value : '';
   });
   const updated = Object.assign({}, w);
-  updated.tastings = (w.tastings||[]).concat([tasting]);
-  updated.quantity = Math.max(0, qty(w) - 1);
 
-  // 여러 위치에 나눠 보관 중인 와인이면, 위치별 수량 배열도 총량과 어긋나지 않게 함께 줄임
+  // 여러 위치에 나눠 보관 중인 와인이면, 사용자가 고른 위치에서만 차감 (임의의 첫 위치로 대신 차감하지 않음)
   if(Array.isArray(w.locations) && w.locations.length>0){
     const newLocs = w.locations.map(r=>({ loc:r.loc, qty:parseInt(r.qty)||0 }));
-    // 어떤 위치 카드에서 눌렀는지 알면 그 위치를 우선 차감, 모르면 수량이 남아있는 첫 위치를 차감
+    const stocked = newLocs.filter(r=>r.qty>0);
     let idx = tasteLogFromLocation ? newLocs.findIndex(r=>r.loc===tasteLogFromLocation && r.qty>0) : -1;
-    if(idx<0) idx = newLocs.findIndex(r=>r.qty>0);
-    if(idx>=0) newLocs[idx].qty -= 1;
+    if(idx<0 && stocked.length===1) idx = newLocs.findIndex(r=>r.qty>0); // 실제로 남은 곳이 한 곳뿐이면 그곳
+    if(idx<0){
+      // 선택 안 했거나, 다른 기기에서 그 위치 수량이 이미 바뀐 경우 → 저장하지 않고 다시 고르게 함
+      showToast(tasteLogFromLocation ? '선택한 위치에 남은 병이 없어요. 위치를 다시 골라 주세요.' : '마신 병의 위치를 선택해 주세요.');
+      wines = wines.map(x=>x.id===w.id ? w : x);
+      tasteLogFromLocation = null;
+      renderTasteLocBanner(w);
+      return;
+    }
+    tasting.location = newLocs[idx].loc;
+    newLocs[idx].qty -= 1;
     const filtered = newLocs.filter(r=>r.qty>0);
     if(filtered.length<=1){
       // 한 곳만 남으면 단일 위치로 단순화
@@ -3596,7 +3639,13 @@ async function saveTasteLog(){
       updated.locations = filtered;
       updated.location = 'multi';
     }
+  } else {
+    // 단일 위치 와인: 그 위치를 기록에 남김
+    tasting.location = (w.location && w.location!=='multi') ? w.location : (tasteLogFromLocation || '외부');
   }
+  updated.tastings = (w.tastings||[]).concat([tasting]);
+  updated.quantity = Math.max(0, qty(w) - 1);
+  if(Array.isArray(updated.locations) && updated.locations.length>0) updated.quantity = qty(updated);
   tasteLogFromLocation = null;
 
   await persistWine(updated);
@@ -3683,20 +3732,33 @@ async function deleteWine(){
 }
 
 async function deleteTasting(){
-  const w = wines.find(x=>x.id===editingWineId);
-  if(!w) return;
-  showConfirm('이 시음 기록을 삭제할까요? 보유 수량이 1병 복원됩니다.', async ()=>{
+  const w0 = wines.find(x=>x.id===editingWineId);
+  if(!w0) return;
+  const t0 = (w0.tastings||[]).find(t=>t.id===editingTastingId);
+  const restoreLabel = (t0 && t0.location) ? locationLabel(t0.location)+'에' : '보유 수량이';
+  const tastingId = editingTastingId;
+  showConfirm(`이 시음 기록을 삭제할까요? ${restoreLabel} 1병 복원됩니다.`, async ()=>{
     try{
+      // 저장(saveTasteLog)과 똑같이, 다른 기기의 변경을 덮어쓰지 않도록 서버 최신본 기준으로 계산
+      const w = await freshWineFromServer(w0.id);
+      if(!w) return;
+      const t = (w.tastings||[]).find(x=>x.id===tastingId) || t0;
       const updated = Object.assign({}, w);
-      updated.tastings = (w.tastings||[]).filter(t=>t.id!==editingTastingId);
-      updated.quantity = qty(w) + 1;
+      updated.tastings = (w.tastings||[]).filter(x=>x.id!==tastingId);
 
-      if(Array.isArray(w.locations) && w.locations.length>0){
-        const newLocs = w.locations.map(r=>({ loc:r.loc, qty:parseInt(r.qty)||0 }));
-        newLocs[0].qty += 1; // 복원분은 첫 번째 위치에 되돌려 넣음 (정확한 원래 위치는 기록되지 않음)
-        updated.locations = newLocs;
-        updated.location = newLocs.length>1 ? 'multi' : newLocs[0].loc;
-      }
+      // 현재 위치별 수량(0병 위치는 빠져 있을 수 있음)
+      let rows = (Array.isArray(w.locations) && w.locations.length>0)
+        ? w.locations.map(r=>({ loc:r.loc, qty:parseInt(r.qty)||0 }))
+        : (qty(w)>0 ? [{ loc:(w.location && w.location!=='multi') ? w.location : '외부', qty:qty(w) }] : []);
+      // 원래 꺼낸 위치로 되돌림. 위치가 기록되지 않은 예전 기록은 기존 방식(첫 위치)대로
+      let target = (t && t.location) ? t.location : (rows[0] ? rows[0].loc : w.location);
+      if(!target || target==='multi') target = '외부';
+      const i = rows.findIndex(r=>r.loc===target);
+      if(i>=0) rows[i].qty += 1; else rows.push({ loc:target, qty:1 });
+      rows = rows.filter(r=>r.qty>0);
+      if(rows.length>1){ updated.locations = rows; updated.location = 'multi'; }
+      else { updated.locations = null; updated.location = rows[0].loc; }
+      updated.quantity = rows.reduce((s,r)=>s+r.qty, 0);
 
       await persistWine(updated);
       closePanel();
